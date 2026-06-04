@@ -14,9 +14,12 @@ A baseline Convolutional Neural Network (CNN) built in TensorFlow and Keras to c
 ```
 Model_2_CNN/
 │
-├── cnn-car-vs-bike.ipynb   # Jupyter Notebook containing the training and evaluation code
-├── README.md               # Detailed project documentation and deep learning theory
-└── .gitignore              # Ignores python cache, checkpoints, and IDE folders
+├── cnn-car-vs-bike.ipynb                         # Jupyter Notebook containing the baseline CNN code
+├── cnn-car-vs-bike-with-a-pretrained-model.ipynb     # Notebook containing baseline CNN & MobileNetV2 models
+├── README.md                                     # Detailed project documentation and deep learning theory
+├── .gitignore                                    # Ignores python cache, checkpoints, and IDE folders
+└── mobilenetv2_car_bike/
+    └── mobilenetv2_car_bike.keras                # Saved Keras model file using MobileNetV2
 ```
 
 ---
@@ -153,7 +156,96 @@ Below is the summary of the network's layers, output shapes, and parameter count
 
 ---
 
-## 🚀 How to Run the Notebook
+## 🧬 Transfer Learning & Pretrained Models
+
+In the second version of the model, we transition from our custom baseline CNN to **Transfer Learning** using a state-of-the-art pretrained architecture: **MobileNetV2**.
+
+### 1. What is a Pretrained Model?
+A **pretrained model** is a deep learning model that has been previously trained on a massive, benchmark dataset (such as **ImageNet**, which contains over 14 million images categorized into 1,000 diverse classes). 
+Instead of training a neural network from scratch with randomized weights, we load this model with its pre-learned weights. The early and middle layers of these models have already learned general feature extractors (e.g., edges, textures, shapes, spatial patterns) that are highly transferable to other computer vision tasks.
+
+### 2. Why Use Transfer Learning? (Benefits & Usefulness)
+* **High Accuracy with Limited Data**: Training deep CNNs from scratch on small datasets (like our 4,000-image dataset) typically leads to severe overfitting. Pretrained models bring prior knowledge, allowing them to generalize exceptionally well even with limited samples.
+* **Dramatic Computational Savings**: Instead of training millions of parameters for days, we freeze the pretrained weights and only train a small "classifier head" on top. This reduces the number of trainable parameters and speeds up training time.
+* **Faster Convergence**: Pretrained models start with optimized feature detectors, allowing the training loss to decrease much faster and stabilize in just a few epochs (e.g., 5 epochs instead of 10+).
+
+### 3. How Transfer Learning Works: Freezing vs. Fine-Tuning
+Transfer learning generally follows two steps:
+1. **Feature Extraction (Freezing)**: 
+   We load the base network (e.g., MobileNetV2) without its final classification layer (`include_top=False`). We freeze all its layers (`model.trainable = False`), meaning their weights will not be updated during backpropagation. We add a custom classification head on top and train only this head.
+2. **Fine-Tuning (Optional)**:
+   After the custom head is trained, we can unfreeze a few of the top layers of the base network and train the model again with a very low learning rate. This adapts the high-level features of the pretrained base to our specific dataset.
+
+In this project, we implement **Feature Extraction** by freezing the entire MobileNetV2 base.
+
+---
+
+### 📱 Pretrained Architecture: MobileNetV2
+**MobileNetV2** is a highly efficient convolutional neural network architecture developed by Google, optimized for mobile and resource-constrained devices. It features:
+* **Depthwise Separable Convolutions**: Splits standard convolution into:
+  1. *Depthwise Convolution*: A single spatial filter applied per input channel.
+  2. *Pointwise Convolution*: A $1\times1$ convolution that mixes the channels.
+  This reduces the computational cost and parameter count by a factor of 8 to 9 compared to standard convolutions with only a tiny drop in accuracy.
+* **Inverted Residual Blocks**: Traditional residual blocks connect layers with many channels. MobileNetV2 connects thin bottleneck layers instead, expanding them temporarily to extract features and then projecting them back to prevent information loss.
+* **Linear Bottlenecks**: Prevents non-linearities (like ReLU) from destroying useful information in low-dimensional spaces.
+
+#### Pretrained Model Pipeline (Keras Sequential)
+```
+[Input (224x224x3)] 
+        │
+[MobileNetV2 Base (Weights: ImageNet, Trainable: False)] (Output: 7x7x1280)
+        │
+[GlobalAveragePooling2D] (Reduces spatial dimensions to a 1D vector of 1280 features)
+        │
+[Dense (128, ReLU)] (Intermediate fully connected layer)
+        │
+[Dropout (0.3)] (Regularization layer preventing overfitting)
+        │
+[Dense (1, Sigmoid)] ──> [Binary Output (Bike vs. Car)]
+```
+
+---
+
+## 📈 Model Comparison & Metrics
+
+We compared our custom **Baseline CNN** against the **MobileNetV2 Pretrained Model** on the validation set of 800 images:
+
+| Metric | Baseline CNN (10 Epochs) | MobileNetV2 Pretrained (5 Epochs) |
+| :--- | :---: | :---: |
+| **Total Trainable Params** | 11,169,089 (~11.17M) | 164,097 (~0.16M) |
+| **Training Time (per epoch)** | ~220 seconds | **~120 seconds** (45% faster) |
+| **Training Accuracy** | ~92.09% | **~98.69%** |
+| **Validation Accuracy** | ~90.00% | **~98.75%** |
+| **False Positives (Predicted Car for Bike)**| 54 | **7** |
+| **False Negatives (Predicted Bike for Car)**| 22 | **3** |
+
+### Confusion Matrix Comparison
+
+```
+   Baseline CNN Matrix                  MobileNetV2 Matrix
+   
+      Predicted                            Predicted
+     Bike   Car                           Bike   Car
+Actual                               Actual
+ Bike [346   54]                      Bike  [393    7]
+ Car  [ 22  378]                      Car   [  3  397]
+```
+
+### Classification Report (MobileNetV2)
+```
+              precision    recall  f1-score   support
+
+        Bike       0.99      0.98      0.99       400
+         Car       0.98      0.99      0.99       400
+
+    accuracy                           0.99       800
+   macro avg       0.99      0.99      0.99       800
+weighted avg       0.99      0.99      0.99       800
+```
+
+---
+
+## 🚀 How to Run the Notebooks
 
 ### Prerequisites
 Make sure you have Python 3 installed along with the required libraries:
@@ -167,18 +259,20 @@ pip install numpy pandas matplotlib tensorflow scikit-learn pillow
    git clone https://github.com/yach26/Car-bike-classification-cnn-baseline.git
    cd Car-bike-classification-cnn-baseline
    ```
-2. Download the dataset and place it in the path specified inside the notebook.
+2. Download the dataset and place it in the path specified inside the notebooks.
 3. Start Jupyter Notebook or JupyterLab:
    ```bash
    jupyter notebook
    ```
-4. Open `cnn-car-vs-bike.ipynb` and run all cells.
+4. Choose the notebook you wish to run:
+   * **Baseline Model**: Open and run `cnn-car-vs-bike.ipynb`.
+   * **Transfer Learning Model**: Open and run `cnn-car-vs-bike-with-a-pretrained-model.ipynb`.
 
 ---
 
 ## 📊 Evaluation & Metrics
 
-The notebook evaluates model performance on validation data using the following metrics:
+Both notebooks evaluate model performance on validation data using the following metrics:
 1. **Accuracy Score**: Overall percentage of correct predictions.
 2. **Confusion Matrix**: Identifies True Positives, True Negatives, False Positives, and False Negatives.
 3. **Classification Report**:
@@ -186,4 +280,4 @@ The notebook evaluates model performance on validation data using the following 
    * **Recall**: Out of all actual Cars/Bikes, how many did the model find?
    * **F1-Score**: Harmonic mean of Precision and Recall.
 
-Training curves for validation and training accuracy/loss are plotted at the end of the notebook to monitor convergence and check for overfitting.
+Training curves for validation and training accuracy/loss are plotted at the end of each notebook to monitor convergence and check for overfitting.
