@@ -281,3 +281,99 @@ Both notebooks evaluate model performance on validation data using the following
    * **F1-Score**: Harmonic mean of Precision and Recall.
 
 Training curves for validation and training accuracy/loss are plotted at the end of each notebook to monitor convergence and check for overfitting.
+
+---
+
+## 🌐 Web Integration & Deployment Guide
+
+This section explains how to use the trained `.keras` model in websites and web applications, highlighting multiple deployment architectures.
+
+### 1. Python Web Dashboard: Streamlit (Used in this repository)
+For rapid prototyping, we built a web application using **Streamlit**.
+* **How it works:** Streamlit translates Python scripts into an interactive HTML front-end dynamically. 
+* **Key Features implemented:**
+  * **Memory Caching (`@st.cache_resource`):** Loads the neural network once on startup instead of reloading on every user action.
+  * **Inference Pipeline:** Image resizing to $224 \times 224$, conversion to NumPy arrays, normalization to `[0.0, 1.0]`, and batch extension.
+* **How to run locally:**
+  ```bash
+  pip install streamlit tensorflow pillow numpy
+  streamlit run deployment.py
+  ```
+
+---
+
+### 2. Scalable Production Option: REST API (FastAPI / Flask) + Frontend (React / Vue)
+For larger public-facing websites, separating the front-end interface from the deep learning back-end is highly recommended.
+
+```
+┌──────────────┐   1. POST /predict (Image)   ┌───────────────┐
+│ React Client │ ───────────────────────────> │ FastAPI Server│
+│  (Frontend)  │ <─────────────────────────── │   (Backend)   │
+└──────────────┘    2. JSON (Class & Prob)    └───────────────┘
+```
+
+* **Backend (FastAPI/Python):** Build a JSON API endpoint to process images and run inference.
+  ```python
+  from fastapi import FastAPI, UploadFile, File
+  import tensorflow as tf
+  from PIL import Image
+  import io
+  import numpy as np
+
+  app = FastAPI()
+  model = tf.keras.models.load_model("model/mobilenetv2_car_bike.keras")
+
+  @app.post("/predict")
+  async def predict(file: UploadFile = File(...)):
+      contents = await file.read()
+      image = Image.open(io.BytesIO(contents)).convert("RGB").resize((224, 224))
+      input_arr = np.expand_dims(np.array(image) / 255.0, axis=0)
+      raw_prob = float(model.predict(input_arr)[0][0])
+      
+      label = "Car" if raw_prob > 0.5 else "Bike"
+      confidence = raw_prob if label == "Car" else 1.0 - raw_prob
+      return {"class": label, "confidence": confidence, "raw_score": raw_prob}
+  ```
+* **Frontend (JavaScript/React):** The frontend issues an asynchronous HTTP `fetch()` call uploading the image to the `/predict` route and renders the returned JSON key-values directly on a dashboard page.
+
+---
+
+### 3. Serverless Client-Side Option: TensorFlow.js (In-Browser Execution)
+To run predictions completely inside the user's browser *without any server back-end*, you can port the model to JavaScript.
+
+1. **Convert the Keras model:**
+   Install `tensorflowjs` and convert the `.keras` model file to a web-friendly JSON format:
+   ```bash
+   pip install tensorflowjs
+   tensorflowjs_converter --input_format=keras model/mobilenetv2_car_bike.keras web_model/
+   ```
+2. **Load and run in HTML/JS:**
+   ```javascript
+   import * as tf from '@tensorflow/tfjs';
+
+   // Load the web-friendly model
+   const model = await tf.loadLayersModel('web_model/model.json');
+
+   // Read image from an HTML <img id="user-image"> tag
+   const imageElement = document.getElementById('user-image');
+   
+   // Preprocess using tensor operations
+   const tensor = tf.browser.fromPixels(imageElement)
+     .resizeNearestNeighbor([224, 224])
+     .toFloat()
+     .div(tf.scalar(255.0))
+     .expandDims(0);
+
+   // Execute inference
+   const prediction = model.predict(tensor);
+   const score = (await prediction.data())[0];
+   console.log(score > 0.5 ? 'Car' : 'Bike');
+   ```
+* **Why it's useful:** Zero hosting costs for GPU/CPU servers, offline capability, and 100% user privacy since data never leaves the client's device.
+
+---
+
+### 4. Cost-Effective Scaling: Serverless (AWS Lambda / GCP Functions)
+* Package your Python code and the model file into a Docker container.
+* Deploy to **AWS Lambda** (behind API Gateway) or **Google Cloud Run**.
+* **Why it's useful:** The cloud provider dynamically spins up containers only when requests are received, scaling down to zero during idle periods. Perfect for low or unpredictable traffic volume.
